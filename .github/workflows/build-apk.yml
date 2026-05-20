@@ -39,14 +39,12 @@ jobs:
 
       - name: Set up debug keystore
         run: |
-          # Always remove any existing (possibly empty) keystore first
           rm -f debug.keystore
-
           if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
             echo "Using keystore from secret..."
             echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 --decode > debug.keystore
           else
-            echo "No secret found, generating a fresh debug keystore..."
+            echo "Generating a fresh debug keystore..."
             keytool -genkeypair \
               -keystore debug.keystore \
               -storepass android \
@@ -57,11 +55,28 @@ jobs:
               -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
           fi
-
           echo "Keystore ready: $(ls -lh debug.keystore)"
 
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
+      - name: Find or create gradlew
+        run: |
+          # Show repo structure for debugging
+          echo "=== Repo root contents ==="
+          ls -la
+          echo "=== Searching for gradlew ==="
+          find . -name "gradlew" -not -path "*/build/*" 2>/dev/null || true
+
+          if [ -f "./gradlew" ]; then
+            echo "Found gradlew in root"
+            chmod +x ./gradlew
+          else
+            echo "gradlew not found — generating via Gradle wrapper..."
+            # Install gradle to generate the wrapper
+            wget -q https://services.gradle.org/distributions/gradle-8.11.1-bin.zip -O /tmp/gradle.zip
+            unzip -q /tmp/gradle.zip -d /tmp/gradle
+            /tmp/gradle/gradle-8.11.1/bin/gradle wrapper --gradle-version 8.11.1
+            chmod +x ./gradlew
+            echo "gradlew generated successfully"
+          fi
 
       - name: Remove signingConfig line from debug build type
         run: |
