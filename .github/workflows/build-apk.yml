@@ -5,7 +5,7 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch: # allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   build:
@@ -37,15 +37,16 @@ jobs:
       - name: Create .env file with dummy API key
         run: echo "GEMINI_API_KEY=PLACEHOLDER_KEY" > .env
 
-      - name: Decode and place debug keystore
+      - name: Set up debug keystore
         run: |
-          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 --decode > debug.keystore
-        # If you don't set the secret, we generate a fresh debug keystore instead:
-        continue-on-error: true
+          # Always remove any existing (possibly empty) keystore first
+          rm -f debug.keystore
 
-      - name: Generate debug keystore if missing or decode failed
-        run: |
-          if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
+          if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "Using keystore from secret..."
+            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 --decode > debug.keystore
+          else
+            echo "No secret found, generating a fresh debug keystore..."
             keytool -genkeypair \
               -keystore debug.keystore \
               -storepass android \
@@ -57,13 +58,13 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+          echo "Keystore ready: $(ls -lh debug.keystore)"
+
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Remove signingConfig line that references debug keystore secret
+      - name: Remove signingConfig line from debug build type
         run: |
-          # The build.gradle.kts has a line:  signingConfig = signingConfigs.getByName("debugConfig")
-          # inside the debug build type. Per the README we must remove it for local/CI builds.
           sed -i '/signingConfig = signingConfigs.getByName("debugConfig")/d' app/build.gradle.kts
 
       - name: Build debug APK
