@@ -1,1 +1,77 @@
+name: Build Debug APK
 
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # allows manual trigger from GitHub UI
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Create .env file with dummy API key
+        run: echo "GEMINI_API_KEY=PLACEHOLDER_KEY" > .env
+
+      - name: Decode and place debug keystore
+        run: |
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 --decode > debug.keystore
+        # If you don't set the secret, we generate a fresh debug keystore instead:
+        continue-on-error: true
+
+      - name: Generate debug keystore if missing or decode failed
+        run: |
+          if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
+            keytool -genkeypair \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Remove signingConfig line that references debug keystore secret
+        run: |
+          # The build.gradle.kts has a line:  signingConfig = signingConfigs.getByName("debugConfig")
+          # inside the debug build type. Per the README we must remove it for local/CI builds.
+          sed -i '/signingConfig = signingConfigs.getByName("debugConfig")/d' app/build.gradle.kts
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: panorama-downloader-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
