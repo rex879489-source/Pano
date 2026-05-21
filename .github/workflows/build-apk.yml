@@ -53,7 +53,7 @@ jobs:
               -keyalg RSA \
               -keysize 2048 \
               -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+              -dname "CN=Android Debug, O=Android, C=US"
           fi
 
       - name: Set up Gradle 9.3.1 wrapper (required by AGP 9.1.1)
